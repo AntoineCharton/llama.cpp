@@ -177,6 +177,32 @@ std::string GenerateResponse(const std::string & userText) {
     return response;
 }
 
+std::string GetBackendInfo() {
+    std::string result;
+
+    size_t count = ggml_backend_dev_count();
+
+    for (size_t i = 0; i < count; ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+
+        const char * name        = ggml_backend_dev_name(dev);
+        const char * description = ggml_backend_dev_description(dev);
+
+        if (name) {
+            result += name;
+        }
+
+        if (description) {
+            result += " - ";
+            result += description;
+        }
+
+        result += "\n";
+    }
+
+    return result;
+}
+
 bool LoadModel(const char * path) {
     if (g_ctx) {
         llama_free(g_ctx);
@@ -189,7 +215,8 @@ bool LoadModel(const char * path) {
     }
 
     llama_backend_init();
-
+    std::string backendInfo  = GetBackendInfo();
+    MessageBoxA(g_window, backendInfo.c_str(), "GGML Backends", MB_OK);
     llama_model_params model_params = llama_model_default_params();
 
     g_model = llama_model_load_from_file(path, model_params);
