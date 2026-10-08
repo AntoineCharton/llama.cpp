@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 
+#include "chat.h"
 #include "llama.h"
 
 #include <windows.h>
@@ -15,8 +16,7 @@ static HWND g_status      = nullptr;
 static HWND g_inputText   = nullptr;
 static HWND g_textInModel = nullptr;
 
-static llama_model *   g_model = nullptr;
-static llama_context * g_ctx   = nullptr;
+static chatData g_chatData;
 
 void SetStatus(const wchar_t * text) {
     if (g_status) {
@@ -42,7 +42,7 @@ std::string WideToUtf8(const wchar_t * text) {
 }
 
 std::vector<llama_token> Tokenize(const std::string & text) {
-    const llama_vocab * vocab = llama_model_get_vocab(g_model);
+    const llama_vocab * vocab = llama_model_get_vocab(g_chatData.model);
 
     int n_tokens = -llama_tokenize(vocab, text.c_str(), static_cast<int32_t>(text.size()), nullptr, 0, true, true);
 
@@ -62,119 +62,6 @@ std::vector<llama_token> Tokenize(const std::string & text) {
     tokens.resize(result);
 
     return tokens;
-}
-
-std::string GenerateResponse(const std::string & userText) {
-    if (!g_model || !g_ctx) {
-        return "No model loaded.";
-    }
-
-    const llama_vocab * vocab = llama_model_get_vocab(g_model);
-
-    //
-    // Build chat message
-    //
-    llama_chat_message message{ "user", userText.c_str() };
-
-    //
-    // Get the chat template embedded in the model.
-    //
-    const char * tmpl = llama_model_chat_template(g_model, nullptr);
-
-    if (!tmpl) {
-        return "Model does not provide a chat template.";
-    }
-
-    //
-    // Format:
-    //
-    // user message -> model-specific prompt
-    //
-    int promptSize = llama_chat_apply_template(tmpl, &message, 1, true, nullptr, 0);
-
-    if (promptSize < 0) {
-        return "Failed to apply chat template.";
-    }
-
-    std::vector<char> formatted(promptSize + 1);
-
-    int formattedSize =
-        llama_chat_apply_template(tmpl, &message, 1, true, formatted.data(), static_cast<int32_t>(formatted.size()));
-
-    if (formattedSize < 0) {
-        return "Failed to format prompt.";
-    }
-
-    std::string prompt(formatted.data(), formattedSize);
-
-    //
-    // Tokenize prompt
-    //
-    std::vector<llama_token> tokens = Tokenize(prompt);
-
-    if (tokens.empty()) {
-        return "Failed to tokenize prompt.";
-    }
-
-    //
-    // Create sampler
-    //
-    auto samplerParams = llama_sampler_chain_default_params();
-
-    llama_sampler * sampler = llama_sampler_chain_init(samplerParams);
-
-    if (!sampler) {
-        return "Failed to create sampler.";
-    }
-
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
-
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.95f, 1));
-
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
-
-    llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
-
-    //
-    // Send prompt to the model.
-    //
-    llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
-
-    std::string response;
-
-    while (true) {
-        //
-        // Evaluate the current batch.
-        //
-        int result = llama_decode(g_ctx, batch);
-        if (result != 0) {
-            response = "llama_decode() failed.";
-            break;
-        }
-
-        llama_token token = llama_sampler_sample(sampler, g_ctx, -1);
-
-        if (llama_vocab_is_eog(vocab, token)) {
-            break;
-        }
-
-        char buffer[256];
-
-        int n = llama_token_to_piece(vocab, token, buffer, sizeof(buffer), 0, true);
-
-        if (n < 0) {
-            response = "Failed to convert token.";
-            break;
-        }
-
-        response.append(buffer, n);
-
-        batch = llama_batch_get_one(&token, 1);
-    }
-
-    llama_sampler_free(sampler);
-
-    return response;
 }
 
 std::string GetBackendInfo() {
@@ -204,37 +91,41 @@ std::string GetBackendInfo() {
 }
 
 bool LoadModel(const char * path) {
-    if (g_ctx) {
-        llama_free(g_ctx);
-        g_ctx = nullptr;
+    // Clean up previous model/context
+    if (g_chatData.ctx) {
+        llama_free(g_chatData.ctx);
+        g_chatData.ctx = nullptr;
     }
 
-    if (g_model) {
-        llama_model_free(g_model);
-        g_model = nullptr;
+    if (g_chatData.model) {
+        llama_model_free(g_chatData.model);
+        g_chatData.model = nullptr;
     }
 
     llama_backend_init();
-    std::string backendInfo  = GetBackendInfo();
+
+    std::string backendInfo = GetBackendInfo();
     MessageBoxA(g_window, backendInfo.c_str(), "GGML Backends", MB_OK);
+
+    // Load model
     llama_model_params model_params = llama_model_default_params();
 
-    g_model = llama_model_load_from_file(path, model_params);
+    g_chatData.model = llama_model_load_from_file(path, model_params);
 
-    if (!g_model) {
+    if (!g_chatData.model) {
         SetStatus(L"Failed to load model");
         return false;
     }
 
+    // Create context
     llama_context_params ctx_params = llama_context_default_params();
+    ctx_params.n_ctx                = 4096;
 
-    ctx_params.n_ctx = 4096;
+    g_chatData.ctx = llama_init_from_model(g_chatData.model, ctx_params);
 
-    g_ctx = llama_init_from_model(g_model, ctx_params);
-
-    if (!g_ctx) {
-        llama_model_free(g_model);
-        g_model = nullptr;
+    if (!g_chatData.ctx) {
+        llama_model_free(g_chatData.model);
+        g_chatData.model = nullptr;
 
         SetStatus(L"Failed to create context");
         return false;
@@ -246,7 +137,7 @@ bool LoadModel(const char * path) {
 }
 
 void SendChat() {
-    if (!g_model || !g_ctx) {
+    if (!g_chatData.ctx) {
         MessageBoxW(g_window, L"Please load a model first.", L"Llama.cpp GUI", MB_OK | MB_ICONWARNING);
 
         return;
@@ -264,11 +155,8 @@ void SendChat() {
 
     SetStatus(L"Generating...");
 
-    std::string response = GenerateResponse(input);
+    std::string response = chat::SendMessage(g_chatData, input);
 
-    //
-    // Convert UTF-8 response back to UTF-16
-    //
     int wideSize = MultiByteToWideChar(CP_UTF8, 0, response.data(), static_cast<int>(response.size()), nullptr, 0);
 
     if (wideSize <= 0) {
@@ -355,14 +243,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
         case WM_DESTROY:
             {
-                if (g_ctx) {
-                    llama_free(g_ctx);
-                    g_ctx = nullptr;
+                if (g_chatData.ctx) {
+                    llama_free(g_chatData.ctx);
+                    g_chatData.ctx = nullptr;
                 }
 
-                if (g_model) {
-                    llama_model_free(g_model);
-                    g_model = nullptr;
+                if (g_chatData.model) {
+                    llama_model_free(g_chatData.model);
+                    g_chatData.model = nullptr;
                 }
 
                 llama_backend_free();

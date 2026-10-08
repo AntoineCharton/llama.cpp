@@ -1,5 +1,6 @@
 add_executable(llama-gui WIN32
     main.cpp
+    chat.cpp
 )
 
 target_link_libraries(llama-gui PRIVATE llama)
