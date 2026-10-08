@@ -13,7 +13,7 @@ class chat {
   public:
     static std::string SendChatMessage(chatData & data, const std::string & userText);
     static bool LoadModel(chatData & data, HWND window, HWND status, const char * path);
-    static void SetStatus(const wchar_t * text, HWND status);
+    static void SetStatus(const std::string & text, HWND status); 
     static std::string WideToUtf8(const wchar_t * text);
 
   private:

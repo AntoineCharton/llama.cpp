@@ -83,7 +83,6 @@ bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * pat
     llama_backend_init();
 
     std::string backendInfo = GetBackendInfo();
-    MessageBoxA(window, backendInfo.c_str(), "GGML Backends", MB_OK);
 
     // Load model
     llama_model_params model_params = llama_model_default_params();
@@ -91,7 +90,7 @@ bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * pat
     data.model = llama_model_load_from_file(path, model_params);
 
     if (!data.model) {
-        chat::SetStatus(L"Failed to load model", status);
+        chat::SetStatus("Failed to load model", status);
         return false;
     }
 
@@ -105,18 +104,26 @@ bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * pat
         llama_model_free(data.model);
         data.model = nullptr;
 
-        chat::SetStatus(L"Failed to create context", status);
+        chat::SetStatus("Failed to create context", status);
         return false;
     }
 
-    chat::SetStatus(L"Model loaded", status);
+    chat::SetStatus("Model loaded:\n" + backendInfo, status);
 
     return true;
 }
 
-void chat::SetStatus(const wchar_t * text, HWND status) {
+void chat::SetStatus(const std::string & text, HWND status) {
     if (status) {
-        SetWindowTextW(status, text);
+        int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+
+        if (size > 0) {
+            std::wstring wideText(size, L'\0');
+
+            MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, &wideText[0], size);
+
+            SetWindowTextW(status, wideText.c_str());
+        }
     }
 }
 

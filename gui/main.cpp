@@ -25,7 +25,6 @@ void SendChat() {
     }
 
     wchar_t text[4096] = {};
-
     GetWindowTextW(g_inputText, text, _countof(text));
 
     if (text[0] == L'\0') {
@@ -34,14 +33,14 @@ void SendChat() {
 
     std::string input = chat::WideToUtf8(text);
 
-    chat::SetStatus(L"Generating...", g_status);
+    chat::SetStatus("Generating...", g_status);
 
     std::string response = chat::SendChatMessage(g_chatData, input);
 
     int wideSize = MultiByteToWideChar(CP_UTF8, 0, response.data(), static_cast<int>(response.size()), nullptr, 0);
 
     if (wideSize <= 0) {
-        chat::SetStatus(L"Generation failed", g_status);
+        chat::SetStatus("Generation failed", g_status);
         return;
     }
 
@@ -51,7 +50,7 @@ void SendChat() {
 
     SetWindowTextW(g_textInModel, wideResponse.c_str());
 
-    chat::SetStatus(L"Ready", g_status);
+    chat::SetStatus("Ready", g_status);
 }
 
 void BrowseForModel() {
@@ -85,24 +84,25 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             {
                 g_window = hwnd;
 
-                CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 20, 180, 35,
-                              hwnd, (HMENU) 1001, nullptr, nullptr);
-
-                g_status = CreateWindowW(L"STATIC", L"No model loaded", WS_VISIBLE | WS_CHILD, 20, 70, 500, 30, hwnd,
-                                         nullptr, nullptr, nullptr);
-
-                CreateWindowW(L"BUTTON", L"Send", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 320, 180, 35,
-                              hwnd, (HMENU) 1002, nullptr, nullptr);
+                g_textInModel = CreateWindowW(
+                    L"EDIT", L"",
+                    WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY, 20,
+                    0, 800, 200, hwnd, nullptr, nullptr, nullptr);
 
                 g_inputText =
                     CreateWindowW(L"EDIT", L"No model loaded",
                                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 20,
-                                  120, 500, 100, hwnd, nullptr, nullptr, nullptr);
+                                  200, 800, 100, hwnd, nullptr, nullptr, nullptr);
 
-                g_textInModel = CreateWindowW(
-                    L"EDIT", L"",
-                    WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY, 20,
-                    370, 800, 250, hwnd, nullptr, nullptr, nullptr);
+                CreateWindowW(L"BUTTON", L"Submit", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 300, 180, 35,
+                              hwnd, (HMENU) 1002, nullptr, nullptr);
+
+                
+                CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 420, 180, 35,
+                              hwnd, (HMENU) 1001, nullptr, nullptr);
+
+                g_status = CreateWindowW(L"STATIC", L"No model loaded", WS_VISIBLE | WS_CHILD, 20, 455, 500, 100, hwnd,
+                                         nullptr, nullptr, nullptr);
 
                 return 0;
             }
@@ -146,7 +146,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
-    const wchar_t CLASS_NAME[] = L"LlamaCppGUI";
+    const wchar_t CLASS_NAME[] = L"GPTUS";
 
     WNDCLASSW wc{};
 
@@ -157,16 +157,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
 
     if (!RegisterClassW(&wc)) {
-        MessageBoxW(nullptr, L"Failed to register window class.", L"Llama.cpp GUI", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to register window class.", L"GPTUS", MB_OK | MB_ICONERROR);
 
         return 1;
     }
 
-    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"Llama.cpp GUI", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 900,
+    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"GPTUS", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 900,
                                 700, nullptr, nullptr, hInstance, nullptr);
 
     if (!hwnd) {
-        MessageBoxW(nullptr, L"Failed to create window.", L"Llama.cpp GUI", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to create window.", L"GPTUS", MB_OK | MB_ICONERROR);
 
         return 1;
     }
