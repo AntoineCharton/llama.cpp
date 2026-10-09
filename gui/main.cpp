@@ -91,7 +91,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     0,
                     MSFTEDIT_CLASS,
                     L"", WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY,
-                    20, 0, 800, 200, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+                    20, 0, 800, 500, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
 
                 markdown::SetMarkdown(g_textInModel,
                             "# Load your model to get started");
@@ -99,16 +99,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 g_inputText =
                     CreateWindowW(L"EDIT", L"No model loaded",
                                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 20,
-                                  200, 800, 100, hwnd, nullptr, nullptr, nullptr);
+                                  500, 800, 50, hwnd, nullptr, nullptr, nullptr);
 
-                CreateWindowW(L"BUTTON", L"Submit", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 300, 180, 35,
+                CreateWindowW(L"BUTTON", L"Submit", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 550, 180, 20,
                               hwnd, (HMENU) 1002, nullptr, nullptr);
 
                 
-                CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 420, 180, 35,
+                CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 570, 180, 20,
                               hwnd, (HMENU) 1001, nullptr, nullptr);
 
-                g_status = CreateWindowW(L"STATIC", L"No model loaded", WS_VISIBLE | WS_CHILD, 20, 455, 500, 100, hwnd,
+                g_status = CreateWindowW(L"STATIC", L"No model loaded", WS_VISIBLE | WS_CHILD, 20,590, 500, 100, hwnd,
                                          nullptr, nullptr, nullptr);
 
                 return 0;

@@ -166,6 +166,15 @@ std::string chat::GenerateResponse(chatData & data, const std::string & userText
 
     std::string prompt(formatted.data(), formattedSize);
 
+    // Granite 4.2 thinking-mode workaround.
+    // The legacy C template API cannot pass enable_thinking=true.
+    const std::string thinkPrefix = "<think>\n";
+
+    if (prompt.size() < thinkPrefix.size() ||
+        prompt.compare(prompt.size() - thinkPrefix.size(), thinkPrefix.size(), thinkPrefix) != 0) {
+        prompt += thinkPrefix;
+    }
+
     // Tokenize
     int n_tokens = -llama_tokenize(vocab, prompt.c_str(), static_cast<int32_t>(prompt.size()), nullptr, 0, true, true);
 
@@ -194,18 +203,14 @@ std::string chat::GenerateResponse(chatData & data, const std::string & userText
     }
 
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
-
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.95f, 1));
-
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
-
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(1.0f));
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
     // Send prompt to model
     llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
 
     std::string response;
-
     while (true) {
 
         // Evaluate batch
