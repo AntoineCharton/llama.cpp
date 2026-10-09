@@ -3,18 +3,22 @@
 
 #include "chat.h"
 #include "llama.h"
-
 #include <windows.h>
-
 #include <commdlg.h>
-
 #include <string>
 #include <vector>
+
+#include <richedit.h>
+
+#include "markdown.h"
 
 static HWND g_window      = nullptr;
 static HWND g_status      = nullptr;
 static HWND g_inputText   = nullptr;
 static HWND g_textInModel = nullptr;
+static HWND g_richEdit    = nullptr;
+
+HMODULE hRichEdit = LoadLibraryW(L"Msftedit.dll");
 
 static chatData g_chatData;
 
@@ -48,8 +52,7 @@ void SendChat() {
 
     MultiByteToWideChar(CP_UTF8, 0, response.data(), static_cast<int>(response.size()), &wideResponse[0], wideSize);
 
-    SetWindowTextW(g_textInModel, wideResponse.c_str());
-
+    markdown::SetMarkdown(g_textInModel, response);
     chat::SetStatus("Ready", g_status);
 }
 
@@ -84,10 +87,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             {
                 g_window = hwnd;
 
-                g_textInModel = CreateWindowW(
-                    L"EDIT", L"",
-                    WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY, 20,
-                    0, 800, 200, hwnd, nullptr, nullptr, nullptr);
+                g_textInModel = CreateWindowExW(
+                    0,
+                    MSFTEDIT_CLASS,
+                    L"", WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY,
+                    20, 0, 800, 200, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+
+                markdown::SetMarkdown(g_textInModel,
+                            "# Load your model to get started");
 
                 g_inputText =
                     CreateWindowW(L"EDIT", L"No model loaded",
