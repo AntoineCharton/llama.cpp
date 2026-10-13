@@ -2,6 +2,7 @@ add_executable(llama-gui WIN32
     main.cpp
     chat.cpp
     markdown.cpp
+    windowsGUI.cpp
     thirdParty/md4c/md4c.c
 )
 

@@ -11,6 +11,7 @@
 #include <richedit.h>
 
 #include "markdown.h"
+#include "windowsGUI.h"
 
 static HWND g_window      = nullptr;
 static HWND g_status      = nullptr;
@@ -57,28 +58,11 @@ void SendChat() {
 }
 
 void BrowseForModel() {
-    wchar_t filename[MAX_PATH] = {};
+    const char * path   = Display::BrowseForModel(g_window);
 
-    OPENFILENAMEW dialog{};
-    dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner   = g_window;
-    dialog.lpstrFilter =
-        L"GGUF Models (*.gguf)\0*.gguf\0"
-        L"All Files (*.*)\0*.*\0";
-    dialog.lpstrFile  = filename;
-    dialog.nMaxFile   = MAX_PATH;
-    dialog.Flags      = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-    dialog.lpstrTitle = L"Select GGUF Model";
-
-    if (!GetOpenFileNameW(&dialog)) {
-        return;
+    if (path != nullptr) {
+        chat::LoadModel(g_chatData, g_window, g_status, path);
     }
-
-    char path[MAX_PATH] = {};
-
-    WideCharToMultiByte(CP_UTF8, 0, filename, -1, path, MAX_PATH, nullptr, nullptr);
-
-    chat::LoadModel(g_chatData, g_window, g_status, path);
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -159,7 +143,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     wc.lpfnWndProc   = WindowProc;
     wc.hInstance     = hInstance;
-    wc.lpszClassName = CLASS_NAME;
+    wc.lpszClassName = CLASS_NAME; 
 
     wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
 
