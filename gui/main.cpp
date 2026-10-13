@@ -43,7 +43,7 @@ void SendChat() {
 
     MultiByteToWideChar(CP_UTF8, 0, response.data(), static_cast<int>(response.size()), &wideResponse[0], wideSize);
 
-    markdown::SetMarkdown(g_textInModel, response);
+    windowsGUI::SetMarkdown(g_textInModel, response);
     chat::SetStatus("Ready", g_status);
 }
 
@@ -67,7 +67,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     L"", WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY,
                     20, 0, 800, 500, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
 
-                markdown::SetMarkdown(g_textInModel,
+                windowsGUI::SetMarkdown(g_textInModel,
                             "# Load your model to get started");
 
                 g_inputText =

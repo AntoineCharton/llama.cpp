@@ -1,46 +1,23 @@
 #include "markdown.h"
-#include <richedit.h>
 #include <string_view>
 #include <cstdint>
 #include <string>
 #include "md4c.h"
+#include <codecvt>
+#include <locale>
 
-struct RtfStream {
-    const char * data;
-    size_t       size;
-    size_t       position = 0;
-};
-
-static DWORD CALLBACK ReadRtf(DWORD_PTR cookie, LPBYTE buffer, LONG requested, LONG * received) {
-    auto * stream = reinterpret_cast<RtfStream *>(cookie);
-
-    size_t remaining = stream->size - stream->position;
-    size_t amount    = (remaining < static_cast<size_t>(requested)) ? remaining : static_cast<size_t>(requested);
-
-    if (amount > 0) {
-        memcpy(buffer, stream->data + stream->position, amount);
-        stream->position += amount;
-    }
-
-    *received = static_cast<LONG>(amount);
-    return 0;
-}
 
 static void AppendRtfText(std::string & out, const char * text, size_t len) {
-    // MD4C's default input encoding is UTF-8.
     if (len == 0) {
         return;
     }
-
-    int count = MultiByteToWideChar(CP_UTF8, 0, text, static_cast<int>(len), nullptr, 0);
-
-    if (count <= 0) {
-        return;
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+    std::wstring                                           wide;
+    try {
+        wide = converter.from_bytes(text, text + len);
+    } catch (const std::range_error &) {
+        return;  // Invalid UTF-8 input
     }
-
-    std::wstring wide(count, L'\0');
-
-    MultiByteToWideChar(CP_UTF8, 0, text, static_cast<int>(len), wide.data(), count);
 
     for (wchar_t ch : wide) {
         switch (ch) {
@@ -62,7 +39,6 @@ static void AppendRtfText(std::string & out, const char * text, size_t len) {
                 if (ch >= 0x20 && ch <= 0x7e) {
                     out += static_cast<char>(ch);
                 } else {
-                    // RTF Unicode escapes use signed 16-bit values.
                     short value = static_cast<short>(ch);
                     out += "\\u" + std::to_string(value) + "?";
                 }
@@ -194,7 +170,7 @@ static int RenderText(MD_TEXTTYPE type, const MD_CHAR * text, MD_SIZE size, void
     return 0;
 }
 
-static std::string MarkdownToRtf(std::string_view markdown) {
+std::string markdown::MarkdownToRtf(std::string_view markdown) {
     std::string rtf =
         "{\\rtf1\\ansi\\deff0\\uc1"
         "{\\fonttbl{\\f0\\fnil Segoe UI;}"
@@ -224,7 +200,7 @@ static std::string MarkdownToRtf(std::string_view markdown) {
     return rtf;
 }
 
-void markdown::SetMarkdown(HWND edit, std::string_view markdown) {
+/* void markdown::SetMarkdown(HWND edit, std::string_view markdown) {
     std::string rtf = MarkdownToRtf(markdown);
 
     RtfStream stream{ rtf.data(), rtf.size() };
@@ -234,4 +210,4 @@ void markdown::SetMarkdown(HWND edit, std::string_view markdown) {
     es.pfnCallback = ReadRtf;
 
     SendMessageW(edit, EM_STREAMIN, SF_RTF, reinterpret_cast<LPARAM>(&es));
-}
+}*/

@@ -3,6 +3,14 @@
 #include <Windows.h>
 #include "chat.h"
 #include <string>
+#include <richedit.h>
+#include "markdown.h"
+
+struct RtfStream {
+    const char * data;
+    size_t       size;
+    size_t       position = 0;
+};
 
 const char * windowsGUI::BrowseForModel(HWND window) {
     wchar_t filename[MAX_PATH] = {};
@@ -27,7 +35,33 @@ const char * windowsGUI::BrowseForModel(HWND window) {
     WideCharToMultiByte(CP_UTF8, 0, filename, -1, path, MAX_PATH, nullptr, nullptr);
 
     return path;
-    //chat::LoadModel(g_chatData, g_window, g_status, path);
+}
+
+static DWORD CALLBACK ReadRtf(DWORD_PTR cookie, LPBYTE buffer, LONG requested, LONG * received) {
+    auto * stream = reinterpret_cast<RtfStream *>(cookie);
+
+    size_t remaining = stream->size - stream->position;
+    size_t amount    = (remaining < static_cast<size_t>(requested)) ? remaining : static_cast<size_t>(requested);
+
+    if (amount > 0) {
+        memcpy(buffer, stream->data + stream->position, amount);
+        stream->position += amount;
+    }
+
+    *received = static_cast<LONG>(amount);
+    return 0;
+}
+
+void windowsGUI::SetMarkdown(HWND edit, std::string_view markdown) {
+    std::string rtf = markdown::MarkdownToRtf(markdown);
+
+    RtfStream stream{ rtf.data(), rtf.size() };
+
+    EDITSTREAM es{};
+    es.dwCookie    = reinterpret_cast<DWORD_PTR>(&stream);
+    es.pfnCallback = ReadRtf;
+
+    SendMessageW(edit, EM_STREAMIN, SF_RTF, reinterpret_cast<LPARAM>(&es));
 }
 
 std::string WideToUtf8(const wchar_t * text) {

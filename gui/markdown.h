@@ -1,8 +1,8 @@
 #pragma once
-#include <Windows.h>
 #include <string_view>
+#include <string>
 
 class markdown {
   public:
-    static void SetMarkdown(HWND edit, std::string_view markdown);
+    static std::string markdown::MarkdownToRtf(std::string_view markdown);
 };
