@@ -199,15 +199,3 @@ std::string markdown::MarkdownToRtf(std::string_view markdown) {
 
     return rtf;
 }
-
-/* void markdown::SetMarkdown(HWND edit, std::string_view markdown) {
-    std::string rtf = MarkdownToRtf(markdown);
-
-    RtfStream stream{ rtf.data(), rtf.size() };
-
-    EDITSTREAM es{};
-    es.dwCookie    = reinterpret_cast<DWORD_PTR>(&stream);
-    es.pfnCallback = ReadRtf;
-
-    SendMessageW(edit, EM_STREAMIN, SF_RTF, reinterpret_cast<LPARAM>(&es));
-}*/

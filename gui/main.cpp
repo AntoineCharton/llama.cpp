@@ -2,128 +2,15 @@
 #define NOMINMAX
 
 #include "chat.h"
-#include "llama.h"
-#include <windows.h>
-#include <commdlg.h>
-#include <string>
-#include <vector>
-
-#include <richedit.h>
-
-#include "markdown.h"
 #include "windowsGUI.h"
 
-static HWND g_window      = nullptr;
-static HWND g_status      = nullptr;
-static HWND g_inputText   = nullptr;
-static HWND g_textInModel = nullptr;
-static HWND g_richEdit    = nullptr;
+#include <windows.h>
 
-HMODULE hRichEdit = LoadLibraryW(L"Msftedit.dll");
-
-static chatData g_chatData;
-
-void SendChat() {
-    std::string input = windowsGUI::GetInputText(g_chatData, g_window, g_inputText);
-    if (input.empty()) {
-        return;
-    }
-    chat::SetStatus("Generating...", g_status);
-
-    std::string response = chat::SendChatMessage(g_chatData, input);
-
-    int wideSize = MultiByteToWideChar(CP_UTF8, 0, response.data(), static_cast<int>(response.size()), nullptr, 0);
-
-    if (wideSize <= 0) {
-        chat::SetStatus("Generation failed", g_status);
-        return;
-    }
-
-    std::wstring wideResponse(wideSize, L'\0');
-
-    MultiByteToWideChar(CP_UTF8, 0, response.data(), static_cast<int>(response.size()), &wideResponse[0], wideSize);
-
-    windowsGUI::SetMarkdown(g_textInModel, response);
-    chat::SetStatus("Ready", g_status);
-}
-
-void BrowseForModel() {
-    const char * path   = windowsGUI::BrowseForModel(g_window);
-
-    if (path != nullptr) {
-        chat::LoadModel(g_chatData, g_window, g_status, path);
-    }
-}
+static GUIHandles g_gui;
+static chatData   g_chatData;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    switch (uMsg) {
-        case WM_CREATE:
-            {
-                g_window = hwnd;
-
-                g_textInModel = CreateWindowExW(
-                    0,
-                    MSFTEDIT_CLASS,
-                    L"", WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY,
-                    20, 0, 800, 500, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
-
-                windowsGUI::SetMarkdown(g_textInModel,
-                            "# Load your model to get started");
-
-                g_inputText =
-                    CreateWindowW(L"EDIT", L"No model loaded",
-                                  WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 20,
-                                  500, 800, 50, hwnd, nullptr, nullptr, nullptr);
-
-                CreateWindowW(L"BUTTON", L"Submit", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 550, 180, 20,
-                              hwnd, (HMENU) 1002, nullptr, nullptr);
-
-                
-                CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 570, 180, 20,
-                              hwnd, (HMENU) 1001, nullptr, nullptr);
-
-                g_status = CreateWindowW(L"STATIC", L"No model loaded", WS_VISIBLE | WS_CHILD, 20,590, 500, 100, hwnd,
-                                         nullptr, nullptr, nullptr);
-
-                return 0;
-            }
-
-        case WM_COMMAND:
-            {
-                if (LOWORD(wParam) == 1001) {
-                    BrowseForModel();
-                    return 0;
-                }
-
-                 if (LOWORD(wParam) == 1002) {
-                    SendChat();
-                    return 0;
-                }
-
-                break;
-            }
-
-        case WM_DESTROY:
-            {
-                if (g_chatData.ctx) {
-                    llama_free(g_chatData.ctx);
-                    g_chatData.ctx = nullptr;
-                }
-
-                if (g_chatData.model) {
-                    llama_model_free(g_chatData.model);
-                    g_chatData.model = nullptr;
-                }
-
-                llama_backend_free();
-
-                PostQuitMessage(0);
-
-                return 0;
-            }
-    }
-
-    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+    return windowsGUI::CALLBACKWindowProc(g_gui, g_chatData, hwnd, uMsg, wParam, lParam);
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
@@ -133,22 +20,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
 
     wc.lpfnWndProc   = WindowProc;
     wc.hInstance     = hInstance;
-    wc.lpszClassName = CLASS_NAME; 
-
-    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    wc.lpszClassName = CLASS_NAME;
+    wc.hCursor       = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
 
     if (!RegisterClassW(&wc)) {
         MessageBoxW(nullptr, L"Failed to register window class.", L"GPTUS", MB_OK | MB_ICONERROR);
-
         return 1;
     }
 
-    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"GPTUS", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 900,
-                                700, nullptr, nullptr, hInstance, nullptr);
+    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"GPTUS", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 900, 700,
+                                nullptr, nullptr, hInstance, nullptr);
 
     if (!hwnd) {
         MessageBoxW(nullptr, L"Failed to create window.", L"GPTUS", MB_OK | MB_ICONERROR);
-
         return 1;
     }
 
