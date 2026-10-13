@@ -28,23 +28,6 @@ std::string GetBackendInfo() {
     return result;
 }
 
-std::string chat::WideToUtf8(const wchar_t * text) {
-    if (!text || !*text) {
-        return {};
-    }
-
-    int size = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0, nullptr, nullptr);
-
-    if (size <= 0) {
-        return {};
-    }
-
-    std::string result(size - 1, '\0');
-
-    WideCharToMultiByte(CP_UTF8, 0, text, -1, &result[0], size, nullptr, nullptr);
-    return result;
-}
-
 std::vector<llama_token> Tokenize(chatData & data, const std::string & text) {
     const llama_vocab * vocab = llama_model_get_vocab(data.model);
 

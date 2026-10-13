@@ -24,20 +24,10 @@ HMODULE hRichEdit = LoadLibraryW(L"Msftedit.dll");
 static chatData g_chatData;
 
 void SendChat() {
-    if (!g_chatData.ctx) {
-        MessageBoxW(g_window, L"Please load a model first.", L"Llama.cpp GUI", MB_OK | MB_ICONWARNING);
+    std::string input = windowsGUI::GetInputText(g_chatData, g_window, g_inputText);
+    if (input.empty()) {
         return;
     }
-
-    wchar_t text[4096] = {};
-    GetWindowTextW(g_inputText, text, _countof(text));
-
-    if (text[0] == L'\0') {
-        return;
-    }
-
-    std::string input = chat::WideToUtf8(text);
-
     chat::SetStatus("Generating...", g_status);
 
     std::string response = chat::SendChatMessage(g_chatData, input);
@@ -58,7 +48,7 @@ void SendChat() {
 }
 
 void BrowseForModel() {
-    const char * path   = Display::BrowseForModel(g_window);
+    const char * path   = windowsGUI::BrowseForModel(g_window);
 
     if (path != nullptr) {
         chat::LoadModel(g_chatData, g_window, g_status, path);

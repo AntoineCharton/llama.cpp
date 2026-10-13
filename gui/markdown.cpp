@@ -1,5 +1,4 @@
 #include "markdown.h"
-
 #include <richedit.h>
 #include <string_view>
 #include <cstdint>

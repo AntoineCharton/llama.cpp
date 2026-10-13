@@ -1,7 +1,10 @@
 #pragma once
 #include <Windows.h>
+#include "chat.h"
+#include <string>
 
-class Display {
+class windowsGUI {
   public:
     static const char * BrowseForModel(HWND window);
+    static std::string  GetInputText(chatData chatdata, HWND window, HWND inputText);
 };
