@@ -1,6 +1,8 @@
 #pragma once
 #include "llama.h"
+
 #include <Windows.h>
+
 #include <string>
 
 struct chatData {
@@ -11,8 +13,8 @@ struct chatData {
 class chat {
   public:
     static std::string SendChatMessage(chatData & data, const std::string & userText);
-    static bool LoadModel(chatData & data, HWND window, HWND status, const char * path);
-    static void SetStatus(const std::string & text, HWND status); 
+    static bool        LoadModel(chatData & data, HWND window, HWND status, const char * path);
+    static void        SetStatus(const std::string & text, HWND status);
 
   private:
     static std::string GenerateResponse(chatData & data, const std::string & userText);

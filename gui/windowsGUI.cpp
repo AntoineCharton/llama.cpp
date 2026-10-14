@@ -1,10 +1,13 @@
 #pragma once
 #include "windowsGUI.h"
-#include <Windows.h>
+
 #include "chat.h"
-#include <string>
-#include <richedit.h>
 #include "markdown.h"
+
+#include <richedit.h>
+#include <Windows.h>
+
+#include <string>
 
 struct RtfStream {
     const char * data;
@@ -28,7 +31,7 @@ const char * BrowseForModelWithExplorer(HWND window) {
 
     static char path[MAX_PATH] = {};
 
-     if (!GetOpenFileNameW(&dialog)) {
+    if (!GetOpenFileNameW(&dialog)) {
         return nullptr;
     }
 
@@ -81,7 +84,6 @@ std::string WideToUtf8(const wchar_t * text) {
     return result;
 }
 
-
 std::string windowsGUI::GetInputText(chatData chatData, HWND window, HWND inputText) {
     if (!chatData.ctx) {
         MessageBoxW(window, L"Please load a model first.", L"Llama.cpp GUI", MB_OK | MB_ICONWARNING);
@@ -97,32 +99,32 @@ std::string windowsGUI::GetInputText(chatData chatData, HWND window, HWND inputT
     return WideToUtf8(text);
 }
 
-void SendChat(GUIHandles & g_gui, chatData & g_chatData) {
-    std::string input = windowsGUI::GetInputText(g_chatData, g_gui.window, g_gui.inputText);
+void SendChat(GUIHandles & gui, chatData & chatData) {
+    std::string input = windowsGUI::GetInputText(chatData, gui.window, gui.inputText);
 
     if (input.empty()) {
         return;
     }
 
-    chat::SetStatus("Generating...", g_gui.status);
+    chat::SetStatus("Generating...", gui.status);
 
-    std::string response = chat::SendChatMessage(g_chatData, input);
+    std::string response = chat::SendChatMessage(chatData, input);
 
     if (response.empty()) {
-        chat::SetStatus("Generation failed", g_gui.status);
+        chat::SetStatus("Generation failed", gui.status);
         return;
     }
 
-    windowsGUI::SetMarkdown(g_gui.textInModel, response);
+    windowsGUI::SetMarkdown(gui.textInModel, response);
 
-    chat::SetStatus("Ready", g_gui.status);
+    chat::SetStatus("Ready", gui.status);
 }
 
-void BrowseForModel(GUIHandles & g_gui, chatData & g_chatData) {
-    const char * path = BrowseForModelWithExplorer(g_gui.window);
+void BrowseForModel(GUIHandles & gui, chatData & chatData) {
+    const char * path = BrowseForModelWithExplorer(gui.window);
 
     if (path != nullptr) {
-        chat::LoadModel(g_chatData, g_gui.window, g_gui.status, path);
+        chat::LoadModel(chatData, gui.window, gui.status, path);
     }
 }
 
@@ -198,4 +200,3 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(GUIHandles & g_gui,
 
     return DefWindowProcW(hwnd, uMsg, wParam, lParam);
 }
-

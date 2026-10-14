@@ -1,6 +1,8 @@
 #include "chat.h"
-#include <vector>
+
 #include <windows.h>
+
+#include <vector>
 
 std::string GetBackendInfo() {
     std::string result;
@@ -79,7 +81,7 @@ bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * pat
 
     // Create context
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = 16384;
+    ctx_params.n_ctx                = 16384;
 
     data.ctx = llama_init_from_model(data.model, ctx_params);
 
@@ -110,7 +112,6 @@ void chat::SetStatus(const std::string & text, HWND status) {
     }
 }
 
-
 std::string chat::SendChatMessage(chatData & data, const std::string & userText) {
     if (!data.model || !data.ctx) {
         return "No model loaded.";
@@ -118,7 +119,6 @@ std::string chat::SendChatMessage(chatData & data, const std::string & userText)
 
     return GenerateResponse(data, userText);
 }
-
 
 std::string chat::GenerateResponse(chatData & data, const std::string & userText) {
     const llama_vocab * vocab = llama_model_get_vocab(data.model);
@@ -195,7 +195,6 @@ std::string chat::GenerateResponse(chatData & data, const std::string & userText
 
     std::string response;
     while (true) {
-
         // Evaluate batch
         int decodeResult = llama_decode(data.ctx, batch);
 
