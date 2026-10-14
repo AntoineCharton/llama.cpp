@@ -9,6 +9,8 @@
 
 #include <string>
 
+HMODULE hRichEdit = LoadLibraryW(L"Msftedit.dll");
+
 struct RtfStream {
     const char * data;
     size_t       size;
