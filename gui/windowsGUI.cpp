@@ -11,6 +11,8 @@
 
 HMODULE hRichEdit = LoadLibraryW(L"Msftedit.dll");
 
+static GUIHandles g_gui;
+
 struct RtfStream {
     const char * data;
     size_t       size;
@@ -40,6 +42,24 @@ const char * BrowseForModelWithExplorer(HWND window) {
     WideCharToMultiByte(CP_UTF8, 0, filename, -1, path, MAX_PATH, nullptr, nullptr);
 
     return path;
+}
+
+void SetStatus(const std::string & text, HWND status) {
+    if (!status) {
+        return;
+    }
+
+    int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+
+    if (size <= 0) {
+        return;
+    }
+
+    std::wstring wideText(size, L'\0');
+
+    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, &wideText[0], size);
+
+    SetWindowTextW(status, wideText.c_str());
 }
 
 static DWORD CALLBACK ReadRtf(DWORD_PTR cookie, LPBYTE buffer, LONG requested, LONG * received) {
@@ -108,31 +128,34 @@ void SendChat(GUIHandles & gui, chatData & chatData) {
         return;
     }
 
-    chat::SetStatus("Generating...", gui.status);
+    SetStatus("Generating...", gui.status);
 
     std::string response = chat::SendChatMessage(chatData, input);
 
     if (response.empty()) {
-        chat::SetStatus("Generation failed", gui.status);
+        SetStatus("Generation failed", gui.status);
         return;
     }
 
     windowsGUI::SetMarkdown(gui.textInModel, response);
 
-    chat::SetStatus("Ready", gui.status);
+    SetStatus("Ready", gui.status);
+}
+
+void UpdateStatus(std::string status)
+{
+    SetStatus(status, g_gui.status);
 }
 
 void BrowseForModel(GUIHandles & gui, chatData & chatData) {
     const char * path = BrowseForModelWithExplorer(gui.window);
 
     if (path != nullptr) {
-        chat::LoadModel(chatData, gui.window, gui.status, path);
+        chat::LoadModel(chatData, UpdateStatus, path);
     }
 }
 
-LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(GUIHandles & g_gui,
-                                                chatData &   g_chatdata,
-                                                HWND         hwnd,
+LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND         hwnd,
                                                 UINT         uMsg,
                                                 WPARAM       wParam,
                                                 LPARAM       lParam) {
@@ -168,12 +191,12 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(GUIHandles & g_gui,
         case WM_COMMAND:
             {
                 if (LOWORD(wParam) == 1001) {
-                    BrowseForModel(g_gui, g_chatdata);
+                    BrowseForModel(g_gui, chat::GetChatData());
                     return 0;
                 }
 
                 if (LOWORD(wParam) == 1002) {
-                    SendChat(g_gui, g_chatdata);
+                    SendChat(g_gui, chat::GetChatData());
                     return 0;
                 }
 
@@ -182,14 +205,14 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(GUIHandles & g_gui,
 
         case WM_DESTROY:
             {
-                if (g_chatdata.ctx) {
-                    llama_free(g_chatdata.ctx);
-                    g_chatdata.ctx = nullptr;
+                if (chat::GetChatData().ctx) {
+                    llama_free(chat::GetChatData().ctx);
+                    chat::GetChatData().ctx = nullptr;
                 }
 
-                if (g_chatdata.model) {
-                    llama_model_free(g_chatdata.model);
-                    g_chatdata.model = nullptr;
+                if (chat::GetChatData().model) {
+                    llama_model_free(chat::GetChatData().model);
+                    chat::GetChatData().model = nullptr;
                 }
 
                 llama_backend_free();

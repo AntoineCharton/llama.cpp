@@ -1,11 +1,12 @@
 
 #include "chat.h"
 
-#include <windows.h>
+static chatData g_chatData;
 
-#include <cstdint>
-#include <string>
-#include <vector>
+chatData& chat::GetChatData()
+{
+    return g_chatData;
+}
 
 std::string GetBackendInfo() {
     std::string result;
@@ -58,7 +59,7 @@ std::vector<llama_token> Tokenize(chatData & data, const std::string & text) {
     return tokens;
 }
 
-bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * path) {
+bool chat::LoadModel(chatData & data, void (*status)(std::string), const char * path) {
     // Clean up the previous sampler.
     if (data.sampler) {
         llama_sampler_free(data.sampler);
@@ -87,7 +88,7 @@ bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * pat
     data.model = llama_model_load_from_file(path, model_params);
 
     if (!data.model) {
-        chat::SetStatus("Failed to load model", status);
+        status("Failed to load model");
         return false;
     }
 
@@ -98,7 +99,7 @@ bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * pat
         llama_model_free(data.model);
         data.model = nullptr;
 
-        chat::SetStatus("Failed to get vocabulary", status);
+        status("Failed to get vocabulary");
         return false;
     }
 
@@ -114,31 +115,12 @@ bool chat::LoadModel(chatData & data, HWND window, HWND status, const char * pat
         data.model = nullptr;
         data.vocab = nullptr;
 
-        chat::SetStatus("Failed to create context", status);
+        status("Failed to create context");
         return false;
     }
 
-    chat::SetStatus("Model loaded:\n" + backendInfo, status);
-
+    status("Model loaded:\n" + backendInfo);
     return true;
-}
-
-void chat::SetStatus(const std::string & text, HWND status) {
-    if (!status) {
-        return;
-    }
-
-    int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
-
-    if (size <= 0) {
-        return;
-    }
-
-    std::wstring wideText(size, L'\0');
-
-    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, &wideText[0], size);
-
-    SetWindowTextW(status, wideText.c_str());
 }
 
 std::string chat::SendChatMessage(chatData & data, const std::string & userText) {

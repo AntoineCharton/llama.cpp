@@ -1,11 +1,7 @@
 #include "markdown.h"
-#include <string_view>
 #include <cstdint>
-#include <string>
 #include "md4c.h"
 #include <codecvt>
-#include <locale>
-
 
 static void AppendRtfText(std::string & out, const char * text, size_t len) {
     if (len == 0) {

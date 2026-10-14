@@ -6,11 +6,8 @@
 
 #include <windows.h>
 
-static GUIHandles g_gui;
-static chatData   g_chatData;
-
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    return windowsGUI::CALLBACKWindowProc(g_gui, g_chatData, hwnd, uMsg, wParam, lParam);
+    return windowsGUI::CALLBACKWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
