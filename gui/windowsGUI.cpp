@@ -184,14 +184,13 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
                 g_gui.textInModel = CreateWindowExW(
                     0, MSFTEDIT_CLASS, L"",
                     WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY, 20, 0,
-                    800, 500, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+                    800, 400, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
 
                 windowsGUI::SetMarkdown(g_gui.textInModel, "# Load your model to get started");
 
-                g_gui.inputText =
-                    CreateWindowW(L"EDIT", L"No model loaded",
+                g_gui.inputText = CreateWindowW(L"EDIT", L"No model loaded",
                                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 20,
-                                  500, 800, 50, hwnd, nullptr, nullptr, nullptr);
+                                  400, 800, 150, hwnd, nullptr, nullptr, nullptr);
 
                 CreateWindowW(L"BUTTON", L"Submit", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 550, 180, 20, hwnd,
                               (HMENU) 1002, nullptr, nullptr);

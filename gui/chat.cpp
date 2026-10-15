@@ -1,34 +1,182 @@
-
 #include "chat.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <limits>
+#include <string>
+#include <vector>
+
+constexpr uint32_t kContextSize    = 4096;
+constexpr uint32_t kBatchSize      = 512;
+constexpr uint32_t kMicroBatchSize = 128;
+
+constexpr std::size_t kMinimumOutputTokens = 256;
+constexpr std::size_t kMaxNewTokens        = 512;
 
 static chatData g_chatData;
 
-chatData& chat::GetChatData()
-{
+chatData & chat::GetChatData() {
     return g_chatData;
+}
+
+void FreeSampler(chatData & data) {
+    if (data.sampler) {
+        llama_sampler_free(data.sampler);
+        data.sampler = nullptr;
+    }
+}
+
+void ClearContext(chatData & data) {
+    if (data.ctx) {
+        llama_memory_clear(llama_get_memory(data.ctx), true);
+    }
+}
+
+std::string FailNewTurn(chatData & data, const std::string & message) {
+    fprintf(stderr, "[chat] %s\n", message.c_str());
+
+    FreeSampler(data);
+
+    data.isGenerating     = false;
+    data.generationFailed = true;
+    data.response         = message;
+
+    if (!data.history.empty() && data.history.back().role == "user") {
+        data.history.pop_back();
+    }
+
+    data.batch = {};
+    data.promptTokens.clear();
+
+    ClearContext(data);
+
+    return data.response;
+}
+
+bool FormatHistory(chatData & data, const char * tmpl, std::string & prompt, std::string & error) {
+    std::vector<llama_chat_message> messages;
+    messages.reserve(data.history.size());
+
+    for (const ChatMessage & message : data.history) {
+        messages.push_back({ message.role.c_str(), message.content.c_str() });
+    }
+
+    // First pass: determine the required output size.
+    const int32_t required = llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, nullptr, 0);
+
+    if (required < 0) {
+        error = "Failed to apply the chat template.";
+        return false;
+    }
+
+    std::vector<char> formatted(static_cast<std::size_t>(required) + 1);
+
+    const int32_t actual = llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, formatted.data(),
+                                                     static_cast<int32_t>(formatted.size()));
+
+    if (actual < 0 || static_cast<std::size_t>(actual) > formatted.size()) {
+        error = "Failed to format the conversation.";
+        return false;
+    }
+
+    prompt.assign(formatted.data(), static_cast<std::size_t>(actual));
+
+    return true;
+}
+
+bool InitializeModel(chatData & data, const char * path, void (*onStatusChanged)(std::string)) {
+    if (!path || path[0] == '\0') {
+        if (onStatusChanged) {
+            onStatusChanged("Invalid model path.");
+        }
+
+        return false;
+    }
+
+    llama_model_params modelParams = llama_model_default_params();
+    modelParams.n_gpu_layers = -1;
+
+    llama_model * model = llama_model_load_from_file(path, modelParams);
+
+    if (!model) {
+        fprintf(stderr, "[chat] Failed to load model: %s\n", path);
+
+        if (onStatusChanged) {
+            onStatusChanged("Failed to load model.");
+        }
+
+        return false;
+    }
+
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    if (!vocab) {
+        llama_model_free(model);
+
+        if (onStatusChanged) {
+            onStatusChanged("Failed to get model vocabulary.");
+        }
+
+        return false;
+    }
+
+    llama_context_params ctxParams = llama_context_default_params();
+
+    ctxParams.n_ctx    = kContextSize;
+    ctxParams.n_batch  = kBatchSize;
+    ctxParams.n_ubatch = kMicroBatchSize;
+
+    llama_context * ctx = llama_init_from_model(model, ctxParams);
+
+    if (!ctx) {
+        llama_model_free(model);
+
+        fprintf(stderr,
+                "[chat] Failed to create context "
+                "(context=%u, batch=%u, micro-batch=%u).\n",
+                kContextSize, kBatchSize, kMicroBatchSize);
+
+        if (onStatusChanged) {
+            onStatusChanged("Failed to create context.");
+        }
+
+        return false;
+    }
+
+    data.model        = model;
+    data.vocab        = vocab;
+    data.ctx          = ctx;
+    data.isGenerating = false;
+
+    return true;
 }
 
 std::string GetBackendInfo() {
     std::string result;
 
-    size_t count = ggml_backend_dev_count();
+    const size_t count = ggml_backend_dev_count();
 
     for (size_t i = 0; i < count; ++i) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
 
-        const char * name        = ggml_backend_dev_name(dev);
+        const char * name = ggml_backend_dev_name(dev);
+
         const char * description = ggml_backend_dev_description(dev);
 
         if (name) {
             result += name;
         }
 
-        if (description) {
+        if (name && description) {
             result += " - ";
+        }
+
+        if (description) {
             result += description;
         }
 
-        result += "\n";
+        result += '\n';
     }
 
     return result;
@@ -36,134 +184,110 @@ std::string GetBackendInfo() {
 
 std::vector<llama_token> Tokenize(chatData & data, const std::string & text) {
     if (!data.vocab) {
+        fprintf(stderr, "[chat] Cannot tokenize: vocabulary is null.\n");
+
         return {};
     }
 
-    int n_tokens = -llama_tokenize(data.vocab, text.c_str(), static_cast<int32_t>(text.size()), nullptr, 0, true, true);
+    if (text.size() > static_cast<std::size_t>(std::numeric_limits<int32_t>::max())) {
+        fprintf(stderr, "[chat] Text exceeds the tokenizer size limit.\n");
 
-    if (n_tokens <= 0) {
         return {};
     }
 
-    std::vector<llama_token> tokens(n_tokens);
+    const int32_t textLength = static_cast<int32_t>(text.size());
 
-    int result = llama_tokenize(data.vocab, text.c_str(), static_cast<int32_t>(text.size()), tokens.data(), n_tokens,
-                                true, true);
+    const int32_t required = llama_tokenize(data.vocab, text.c_str(), textLength, nullptr, 0, true, true);
 
-    if (result < 0) {
+    if (required == std::numeric_limits<int32_t>::min()) {
+        fprintf(stderr, "[chat] Token count overflow.\n");
+
         return {};
     }
 
-    tokens.resize(result);
+    if (required >= 0) {
+        if (required == 0) {
+            return {};
+        }
+
+        fprintf(stderr, "[chat] Failed to determine token count: %d\n", required);
+
+        return {};
+    }
+
+    std::vector<llama_token> tokens(static_cast<std::size_t>(-required));
+
+    const int32_t actual = llama_tokenize(data.vocab, text.c_str(), textLength, tokens.data(),
+                                          static_cast<int32_t>(tokens.size()), true, true);
+
+    if (actual < 0) {
+        fprintf(stderr, "[chat] Tokenization failed: %d\n", actual);
+
+        return {};
+    }
+
+    tokens.resize(static_cast<std::size_t>(actual));
 
     return tokens;
 }
 
-void CleanUpPrevious(chatData & chatData) {
-    // Clean up the previous sampler.
-    if (chatData.sampler) {
-        llama_sampler_free(chatData.sampler);
-        chatData.sampler = nullptr;
+void CleanUpPrevious(chatData & data) {
+    data.isGenerating     = false;
+    data.generationFailed = false;
+
+    FreeSampler(data);
+
+    // Free the context before freeing its model.
+    if (data.ctx) {
+        llama_free(data.ctx);
+        data.ctx = nullptr;
     }
 
-    // Clean up the previous context.
-    if (chatData.ctx) {
-        llama_free(chatData.ctx);
-        chatData.ctx = nullptr;
+    if (data.model) {
+        llama_model_free(data.model);
+        data.model = nullptr;
     }
 
-    // Clean up the previous model.
-    if (chatData.model) {
-        chatData.model = nullptr;
-        chatData.vocab = nullptr;
-    }
+    // Vocab is owned by the model.
+    data.vocab = nullptr;
+
+    data.batch = {};
+    data.promptTokens.clear();
+    data.history.clear();
+    data.response.clear();
+
+    data.generatedTokens = 0;
+    data.maxNewTokens    = 0;
 }
 
-void InitializeModel(chatData & chatData, const char * path, void (*onStatusChanged)(std::string)) {
-    // initialize the model
-    llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers       = 4096;
-    int           n_ctx             = 4096;
-    llama_model * model = llama_model_load_from_file(path, model_params);
-    if (!model) {
-        onStatusChanged("%s: error: unable to load model\n");
-        return;
-    }
+// Load a model.
 
-    const llama_vocab * vocab = llama_model_get_vocab(model);
+bool chat::LoadModel(chatData & data, void (*onStatusChanged)(std::string), const char * path) {
+    CleanUpPrevious(data);
 
-    // initialize the context
-    llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx                = n_ctx;
-    ctx_params.n_batch              = n_ctx;
-
-    llama_context * ctx = llama_init_from_model(model, ctx_params);
-    if (!ctx) {
-        onStatusChanged("%s: error: failed to create the llama_context\n");
-        return;
-    }
-
-    // initialize the sampler
-    llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05f, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(0.8f));
-    llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
-
-    llama_batch_ext * batch = llama_batch_ext_init(ctx);
-    chatData.ctx            = ctx;
-    chatData.model          = model;
-    chatData.vocab          = vocab;
-}
-
-bool chat::LoadModel(chatData& chatData, void (*onStatusChanged)(std::string), const char * path) {
-    CleanUpPrevious(chatData);
     llama_backend_init();
 
-    std::string backendInfo = GetBackendInfo();
-    InitializeModel(chatData, path, onStatusChanged);
-    /*// Load model.
-    llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers       = -1;
+    const std::string backendInfo = GetBackendInfo();
 
-    chatData.model = llama_model_load_from_file(path, model_params);
-
-    if (!chatData.model) {
-        onStatusChanged("Failed to load model");
+    if (!InitializeModel(data, path, onStatusChanged)) {
         return false;
     }
 
-    // Get vocabulary owned by the model.
-    chatData.vocab = llama_model_get_vocab(chatData.model);
+    fprintf(stderr,
+            "[chat] Model loaded. Context=%u, batch=%u, "
+            "micro-batch=%u\n",
+            llama_n_ctx(data.ctx), kBatchSize, kMicroBatchSize);
 
-    if (!chatData.vocab) {
-        llama_model_free(chatData.model);
-        chatData.model = nullptr;
-
-        onStatusChanged("Failed to get vocabulary");
-        return false;
+    if (onStatusChanged) {
+        onStatusChanged("Model loaded:\n" + backendInfo);
     }
 
-    // Create context.
-    llama_context_params ctx_params = llama_context_default_params();
-
-    ctx_params.n_ctx = 16384;
-    ctx_params.n_batch  = 16384;
-    ctx_params.n_ubatch = 16384;
-
-    chatData.ctx = llama_init_from_model(chatData.model, ctx_params);*/
-
-    if (!chatData.ctx) {
-        llama_model_free(chatData.model);
-        chatData.model = nullptr;
-        chatData.vocab = nullptr;
-
-        onStatusChanged("Failed to create context");
-        return false;
-    }
-
-    onStatusChanged("Model loaded:\n" + backendInfo);
     return true;
 }
+
+// Public entry point.
+// Call this once for a new user message, then continue calling it
+// while data.isGenerating is true to retrieve subsequent tokens.
 
 std::string chat::SendChatMessage(chatData & data, const std::string & userText, void (*incompleteResponse)()) {
     if (!data.model || !data.ctx) {
@@ -173,44 +297,147 @@ std::string chat::SendChatMessage(chatData & data, const std::string & userText,
     return GenerateResponse(data, userText, incompleteResponse);
 }
 
-// Generates one token per call.
-// Returns false when generation ends or an error occurs.
-bool chat::GenerateNextToken(chatData & data) {
-    // Evaluate the current batch.
-    data.timeCalled  = data.timeCalled + 1;
-    int decodeResult = llama_decode(data.ctx, data.batch);
+// Decode the current batch and generate one token.
 
-    if (decodeResult != 0) {
-        data.response = "Failed to decode batch.";
-        data.isGenerating = false;
+bool chat::GenerateNextToken(chatData & data) {
+    if (!data.model || !data.ctx || !data.vocab || !data.sampler) {
+        fprintf(stderr, "[chat] Generation failed: a required resource is null.\n");
+
+        data.generationFailed = true;
+        data.isGenerating     = false;
+
+        if (data.response.empty()) {
+            data.response = "Model resources are unavailable.";
+        }
+
         return false;
     }
 
-    // Sample the next token.
-    llama_token token = llama_sampler_sample(data.sampler, data.ctx, -1);
+    if (data.batch.n_tokens <= 0) {
+        fprintf(stderr, "[chat] Generation failed: empty batch.\n");
 
-    // Stop at the end-of-generation token.
+        data.generationFailed = true;
+        data.isGenerating     = false;
+
+        if (data.response.empty()) {
+            data.response = "Cannot decode an empty batch.";
+        }
+
+        return false;
+    }
+
+    const llama_pos maxPosition = llama_memory_seq_pos_max(llama_get_memory(data.ctx), 0);
+
+    const uint64_t usedTokens = maxPosition < 0 ? 0 : static_cast<uint64_t>(maxPosition) + 1;
+
+    const uint64_t contextSize = llama_n_ctx(data.ctx);
+
+    const uint64_t batchTokens = static_cast<uint64_t>(data.batch.n_tokens);
+
+    if (usedTokens + batchTokens > contextSize) {
+        fprintf(stderr,
+                "[chat] Context limit exceeded: used=%llu, "
+                "batch=%llu, context=%llu\n",
+                static_cast<unsigned long long>(usedTokens), static_cast<unsigned long long>(batchTokens),
+                static_cast<unsigned long long>(contextSize));
+
+        data.generationFailed = true;
+        data.isGenerating     = false;
+
+        if (data.response.empty()) {
+            data.response = "Context limit exceeded.";
+        }
+
+        return false;
+    }
+
+    ++data.timeCalled;
+
+    const int decodeResult = llama_decode(data.ctx, data.batch);
+
+    // Do not sample after a failed or warning decode result.
+    if (decodeResult != 0) {
+        fprintf(stderr,
+                "[chat] llama_decode returned %d. "
+                "Batch tokens=%d, used=%llu, context=%llu\n",
+                decodeResult, data.batch.n_tokens, static_cast<unsigned long long>(usedTokens),
+                static_cast<unsigned long long>(contextSize));
+
+        data.generationFailed = true;
+        data.isGenerating     = false;
+
+        if (data.response.empty()) {
+            data.response = "Failed to decode batch. Return code: " + std::to_string(decodeResult);
+        }
+
+        return false;
+    }
+
+    const llama_token token = llama_sampler_sample(data.sampler, data.ctx, -1);
+
+    if (token < 0) {
+        fprintf(stderr, "[chat] Sampler returned an invalid token: %d\n", static_cast<int>(token));
+
+        data.generationFailed = true;
+        data.isGenerating     = false;
+
+        if (data.response.empty()) {
+            data.response = "Failed to sample the next token.";
+        }
+
+        return false;
+    }
+
+    // Normal end of generation.
     if (llama_vocab_is_eog(data.vocab, token)) {
         data.isGenerating = false;
         return false;
     }
 
-    // Convert token to text.
-    char buffer[256];
+    // Convert the token into text.
+    std::vector<char> buffer(256);
 
-    int n = llama_token_to_piece(data.vocab, token, buffer, sizeof(buffer), 0, true);
+    int32_t n = llama_token_to_piece(data.vocab, token, buffer.data(), static_cast<int32_t>(buffer.size()), 0, true);
 
     if (n < 0) {
-        data.response = "Failed to convert token.";
+        if (n == std::numeric_limits<int32_t>::min()) {
+            data.generationFailed = true;
+            data.isGenerating     = false;
+            return false;
+        }
+
+        const std::size_t requiredSize = static_cast<std::size_t>(-n);
+
+        buffer.resize(requiredSize);
+
+        n = llama_token_to_piece(data.vocab, token, buffer.data(), static_cast<int32_t>(buffer.size()), 0, true);
+    }
+
+    if (n < 0) {
+        fprintf(stderr, "[chat] Token conversion failed: %d\n", n);
+
+        data.generationFailed = true;
+        data.isGenerating     = false;
+
+        if (data.response.empty()) {
+            data.response = "Failed to convert generated token.";
+        }
+
+        return false;
+    }
+
+    data.response.append(buffer.data(), static_cast<std::size_t>(n));
+
+    ++data.generatedTokens;
+
+    // Stop before attempting to use more than the allowed context.
+    if (data.generatedTokens >= data.maxNewTokens) {
         data.isGenerating = false;
         return false;
     }
 
-    data.response.append(buffer, n);
-
-    // Prepare the next batch.
-    // next_token is a chatData member, so its address
-    // remains valid after this function returns.
+    // The next token is stored as a chatData member so that its
+    // pointer remains valid across calls.
     data.next_token = token;
 
     data.batch = llama_batch_get_one(&data.next_token, 1);
@@ -218,29 +445,33 @@ bool chat::GenerateNextToken(chatData & data) {
     return true;
 }
 
+// Build a prompt from the full conversation history, then generate
+// one token. Subsequent calls continue the same generation.
+
 std::string chat::GenerateResponse(chatData & data, const std::string & userText, void (*incompleteResponse)()) {
     if (!data.isGenerating) {
         if (!data.model || !data.ctx) {
             return "No model loaded.";
         }
 
-        // Ensure vocabulary is available.
-        data.vocab = llama_model_get_vocab(data.model);
+        data.response.clear();
+        data.generationFailed = false;
+        data.generatedTokens  = 0;
+        data.maxNewTokens     = 0;
+
+        FreeSampler(data);
+
+        // Every request rebuilds its prompt from history.
+        // Therefore, clear the previous KV cache before prefill.
+        ClearContext(data);
+
+        if (!data.vocab) {
+            data.vocab = llama_model_get_vocab(data.model);
+        }
 
         if (!data.vocab) {
             return "Failed to get model vocabulary.";
         }
-
-        // Clean up a previous sampler, if any.
-        if (data.sampler) {
-            llama_sampler_free(data.sampler);
-            data.sampler = nullptr;
-        }
-
-        data.response.clear();
-
-        // Prepare the chat message.
-        llama_chat_message message{ "user", userText.c_str() };
 
         const char * tmpl = llama_model_chat_template(data.model, nullptr);
 
@@ -248,47 +479,56 @@ std::string chat::GenerateResponse(chatData & data, const std::string & userText
             return "Model does not provide a chat template.";
         }
 
-        // Apply chat template.
-        int promptSize = llama_chat_apply_template(tmpl, &message, 1, true, nullptr, 0);
+        // Add the new user message exactly once.
+        data.history.push_back({ "user", userText });
 
-        if (promptSize < 0) {
-            return "Failed to apply chat template.";
+        std::string prompt;
+        std::string formatError;
+
+        const uint32_t contextSize = llama_n_ctx(data.ctx);
+
+        // Keep the oldest complete exchanges only as long as the
+        // formatted conversation still fits within the context.
+        for (;;) {
+            if (!FormatHistory(data, tmpl, prompt, formatError)) {
+                return FailNewTurn(data, formatError);
+            }
+
+            data.promptTokens = Tokenize(data, prompt);
+
+            if (data.promptTokens.empty()) {
+                return FailNewTurn(data, "Failed to tokenize the conversation.");
+            }
+
+            fprintf(stderr, "[chat] Prompt bytes=%zu, tokens=%zu, context=%u\n", prompt.size(),
+                    data.promptTokens.size(), contextSize);
+
+            if (data.promptTokens.size() + kMinimumOutputTokens <= contextSize) {
+                break;
+            }
+
+            // History normally consists of user/assistant pairs.
+            // Remove the oldest pair, leaving the latest request.
+            if (data.history.size() >= 3 && data.history[0].role == "user" && data.history[1].role == "assistant") {
+                data.history.erase(data.history.begin(), data.history.begin() + 2);
+
+                continue;
+            }
+
+            return FailNewTurn(data,
+                               "The current message is too long for the context. "
+                               "Shorten the message or increase the context size.");
         }
 
-        std::vector<char> formatted(promptSize + 1);
+        const std::size_t availableTokens = contextSize - data.promptTokens.size();
 
-        int formattedSize = llama_chat_apply_template(tmpl, &message, 1, true, formatted.data(),
-                                                      static_cast<int32_t>(formatted.size()));
+        data.maxNewTokens = std::min(kMaxNewTokens, availableTokens);
 
-        if (formattedSize < 0) {
-            return "Failed to format prompt.";
-        }
-
-        std::string prompt(formatted.data(), formattedSize);
-
-        // Granite 4.2 thinking-mode workaround.
-        const std::string thinkPrefix = "";
-
-        //thinkPrefix = "<think>\n";
-        /* if (prompt.size() < thinkPrefix.size() ||
-            prompt.compare(prompt.size() - thinkPrefix.size(), thinkPrefix.size(), thinkPrefix) != 0) {
-            prompt += thinkPrefix;
-        }*/
-
-        // Tokenize prompt.
-        std::vector<llama_token> tokens = Tokenize(data, prompt);
-
-        if (tokens.empty()) {
-            return "Failed to tokenize prompt.";
-        }
-
-        // Create sampler.
-        auto samplerParams = llama_sampler_chain_default_params();
-
-        data.sampler = llama_sampler_chain_init(samplerParams);
+        // Create a sampler for this response.
+        data.sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
 
         if (!data.sampler) {
-            return "Failed to create sampler.";
+            return FailNewTurn(data, "Failed to create sampler.");
         }
 
         llama_sampler_chain_add(data.sampler, llama_sampler_init_top_k(40));
@@ -299,29 +539,63 @@ std::string chat::GenerateResponse(chatData & data, const std::string & userText
 
         llama_sampler_chain_add(data.sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-        // Initialize the first batch.
-        // tokens stays alive until generation finishes.
-        data.batch = llama_batch_get_one(tokens.data(), static_cast<int32_t>(tokens.size()));
+        // Prefill large prompts in chunks. promptTokens is a member
+        // of chatData, so its storage remains valid across calls.
+        std::size_t offset = 0;
 
-        // Generate until an end token or an error.
+        while (data.promptTokens.size() - offset > kBatchSize) {
+            llama_batch chunk =
+                llama_batch_get_one(data.promptTokens.data() + offset, static_cast<int32_t>(kBatchSize));
+
+            const int rc = llama_decode(data.ctx, chunk);
+
+            if (rc != 0) {
+                fprintf(stderr,
+                        "[chat] Prompt prefill failed: return=%d, "
+                        "offset=%zu, total_tokens=%zu\n",
+                        rc, offset, data.promptTokens.size());
+
+                return FailNewTurn(data,
+                                   "Failed to decode prompt chunk. "
+                                   "Check the application logs.");
+            }
+
+            offset += kBatchSize;
+        }
+
+        // The final chunk is decoded by GenerateNextToken(),
+        // which also samples the first generated token.
+        const std::size_t remaining = data.promptTokens.size() - offset;
+
+        data.batch = llama_batch_get_one(data.promptTokens.data() + offset, static_cast<int32_t>(remaining));
+
         data.isGenerating = true;
     }
 
-    int count = 0;
-    std::string result = data.response; 
-    while (count < 1 && data.isGenerating) {
-        count++;
+    // one generated token per call.
+    if (data.isGenerating) {
         GenerateNextToken(data);
 
-        // Save the response before cleanup.
-        result = data.response;
-
         if (!data.isGenerating) {
-            llama_sampler_free(data.sampler);
-            data.sampler = nullptr;
-        } else {
+            FreeSampler(data);
+
+            if (!data.generationFailed) {
+                // Commit the assistant response once generation ends.
+                data.history.push_back({ "assistant", data.response });
+            } else {
+                // A failed turn is not added to conversation history.
+                if (!data.history.empty() && data.history.back().role == "user") {
+                    data.history.pop_back();
+                }
+            }
+
+            // Remove references to prompt memory before releasing it.
+            data.batch = {};
+            data.promptTokens.clear();
+        } else if (incompleteResponse) {
             incompleteResponse();
         }
     }
-    return result;
+
+    return data.response;
 }

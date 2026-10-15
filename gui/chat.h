@@ -4,6 +4,11 @@
 #include <string>
 #include <vector>
 
+struct ChatMessage {
+    std::string role;
+    std::string content;
+};
+
 struct chatData {
     llama_model *            model   = nullptr;
     llama_context *          ctx     = nullptr;
@@ -15,6 +20,11 @@ struct chatData {
     std::string              response;
     bool                     isGenerating;
     int                      timeCalled = 0;
+    std::vector<ChatMessage> history;
+    std::vector<llama_token> promptTokens;
+    std::size_t generatedTokens  = 0;
+    std::size_t maxNewTokens     = 0;
+    bool        generationFailed = false;
 };
 
 class chat {
