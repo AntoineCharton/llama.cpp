@@ -87,6 +87,14 @@ void windowsGUI::SetMarkdown(HWND edit, std::string_view markdown) {
     es.pfnCallback = ReadRtf;
 
     SendMessageW(edit, EM_STREAMIN, SF_RTF, reinterpret_cast<LPARAM>(&es));
+
+    // Clear the selection and move the caret to the end.
+    SendMessageW(edit, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+
+    // Scroll explicitly to the last line.
+    int lineCount = static_cast<int>(SendMessageW(edit, EM_GETLINECOUNT, 0, 0));
+
+    SendMessageW(edit, EM_LINESCROLL, 0, lineCount);
 }
 
 std::string WideToUtf8(const wchar_t * text) {
@@ -112,13 +120,17 @@ std::string windowsGUI::GetInputText(chatData chatData, HWND window, HWND inputT
         return "";
     }
 
-    wchar_t text[4096] = {};
+    wchar_t text[16384] = {};
     GetWindowTextW(inputText, text, _countof(text));
 
     if (text[0] == L'\0') {
         return "";
     }
     return WideToUtf8(text);
+}
+
+void IncompleteResponse() {
+    InvalidateRect(g_gui.window, nullptr, TRUE);
 }
 
 void SendChat(GUIHandles & gui, chatData & chatData) {
@@ -130,7 +142,7 @@ void SendChat(GUIHandles & gui, chatData & chatData) {
 
     SetStatus("Generating...", gui.status);
 
-    std::string response = chat::SendChatMessage(chatData, input);
+    std::string response = chat::SendChatMessage(chatData, input, IncompleteResponse);
 
     if (response.empty()) {
         SetStatus("Generation failed", gui.status);
@@ -142,8 +154,7 @@ void SendChat(GUIHandles & gui, chatData & chatData) {
     SetStatus("Ready", gui.status);
 }
 
-void UpdateStatus(std::string status)
-{
+void UpdateStatus(std::string status) {
     SetStatus(status, g_gui.status);
 }
 
@@ -155,10 +166,7 @@ void BrowseForModel(GUIHandles & gui, chatData & chatData) {
     }
 }
 
-LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND         hwnd,
-                                                UINT         uMsg,
-                                                WPARAM       wParam,
-                                                LPARAM       lParam) {
+LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_CREATE:
             {
@@ -219,6 +227,17 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND         hwnd,
 
                 PostQuitMessage(0);
 
+                return 0;
+            }
+        case WM_PAINT:
+            {
+                PAINTSTRUCT ps;
+                HDC         hdc = BeginPaint(hwnd, &ps);
+
+                EndPaint(hwnd, &ps);
+                if (chat::GetChatData().isGenerating) {
+                    SendChat(g_gui, chat::GetChatData());
+                }
                 return 0;
             }
     }
