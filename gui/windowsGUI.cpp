@@ -86,15 +86,24 @@ void windowsGUI::SetMarkdown(HWND edit, std::string_view markdown) {
     es.dwCookie    = reinterpret_cast<DWORD_PTR>(&stream);
     es.pfnCallback = ReadRtf;
 
+    const bool wasVisible = IsWindowVisible(edit) != FALSE;
+
+    if (wasVisible) {
+        SendMessageW(edit, WM_SETREDRAW, FALSE, 0);
+    }
+
     SendMessageW(edit, EM_STREAMIN, SF_RTF, reinterpret_cast<LPARAM>(&es));
 
-    // Clear the selection and move the caret to the end.
-    SendMessageW(edit, EM_SETSEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+    if (wasVisible) {
+        SendMessageW(edit, WM_SETREDRAW, TRUE, 0);
 
-    // Scroll explicitly to the last line.
-    int lineCount = static_cast<int>(SendMessageW(edit, EM_GETLINECOUNT, 0, 0));
+        RedrawWindow(edit, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    }
 
-    SendMessageW(edit, EM_LINESCROLL, 0, lineCount);
+    // Scroll after redraw has been re-enabled.
+    SendMessageW(edit, WM_VSCROLL, SB_BOTTOM, 0);
+
+    RedrawWindow(edit, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
 }
 
 std::string WideToUtf8(const wchar_t * text) {
