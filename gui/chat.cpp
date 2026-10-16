@@ -7,12 +7,12 @@
 #include <string>
 #include <vector>
 
-constexpr uint32_t kContextSize    = 4096;
-constexpr uint32_t kBatchSize      = 512;
-constexpr uint32_t kMicroBatchSize = 128;
+constexpr uint32_t kContextSize    = 8192;
+constexpr uint32_t kBatchSize      = 2048;
+constexpr uint32_t kMicroBatchSize = 1024;
 
-constexpr std::size_t kMinimumOutputTokens = 256;
-constexpr std::size_t kMaxNewTokens        = 512;
+constexpr std::size_t kMinimumOutputTokens = 512;
+constexpr std::size_t kMaxNewTokens        = 1024;
 
 static chatData g_chatData;
 
@@ -268,7 +268,7 @@ bool chat::LoadModel(chatData & data, void (*onStatusChanged)(std::string), cons
     llama_backend_init();
 
     const std::string backendInfo = GetBackendInfo();
-
+    
     if (!InitializeModel(data, path, onStatusChanged)) {
         return false;
     }

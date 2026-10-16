@@ -22,9 +22,9 @@ struct chatData {
     int                      timeCalled = 0;
     std::vector<ChatMessage> history;
     std::vector<llama_token> promptTokens;
-    std::size_t generatedTokens  = 0;
-    std::size_t maxNewTokens     = 0;
-    bool        generationFailed = false;
+    std::size_t              generatedTokens  = 0;
+    std::size_t              maxNewTokens     = 0;
+    bool                     generationFailed = false;
 };
 
 class chat {
@@ -34,6 +34,6 @@ class chat {
     static chatData &  GetChatData();
 
   private:
-    static std::string GenerateResponse(chatData & data, const std::string & userText, void (*incompleteResponse)()); 
+    static std::string GenerateResponse(chatData & data, const std::string & userText, void (*incompleteResponse)());
     static bool        GenerateNextToken(chatData & data);
 };

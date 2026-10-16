@@ -145,7 +145,7 @@ void IncompleteResponse() {
 void SendChat(GUIHandles & gui, chatData & chatData) {
     std::string input = windowsGUI::GetInputText(chatData, gui.window, gui.inputText);
 
-    if (input.empty()) {
+    if (input.empty() && !chatData.isGenerating) {
         return;
     }
 
@@ -171,7 +171,9 @@ void BrowseForModel(GUIHandles & gui, chatData & chatData) {
     const char * path = BrowseForModelWithExplorer(gui.window);
 
     if (path != nullptr) {
-        chat::LoadModel(chatData, UpdateStatus, path);
+        if (!chat::LoadModel(chatData, UpdateStatus, path)) {
+            SetStatus("", g_gui.inputText);
+        }
     }
 }
 
@@ -188,7 +190,8 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
 
                 windowsGUI::SetMarkdown(g_gui.textInModel, "# Load your model to get started");
 
-                g_gui.inputText = CreateWindowW(L"EDIT", L"No model loaded",
+                g_gui.inputText =
+                    CreateWindowW(L"EDIT", L"No model loaded",
                                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 20,
                                   400, 800, 150, hwnd, nullptr, nullptr, nullptr);
 
@@ -213,6 +216,7 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
 
                 if (LOWORD(wParam) == 1002) {
                     SendChat(g_gui, chat::GetChatData());
+                    SetStatus("", g_gui.inputText);
                     return 0;
                 }
 
