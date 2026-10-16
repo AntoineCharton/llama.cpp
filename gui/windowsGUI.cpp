@@ -171,8 +171,9 @@ void BrowseForModel(GUIHandles & gui, chatData & chatData) {
     const char * path = BrowseForModelWithExplorer(gui.window);
 
     if (path != nullptr) {
-        if (!chat::LoadModel(chatData, UpdateStatus, path)) {
+        if (chat::LoadModel(chatData, UpdateStatus, path)) {
             SetStatus("", g_gui.inputText);
+            ShowWindow(g_gui.submitButton, SW_SHOW);
         }
     }
 }
@@ -195,8 +196,9 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
                                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 20,
                                   400, 800, 150, hwnd, nullptr, nullptr, nullptr);
 
-                CreateWindowW(L"BUTTON", L"Submit", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 550, 180, 20, hwnd,
-                              (HMENU) 1002, nullptr, nullptr);
+                g_gui.submitButton =
+                    CreateWindowW(L"BUTTON", L"Submit", WS_CHILD | BS_PUSHBUTTON, 20, 550, 180, 20,
+                                                   hwnd, (HMENU) 1002, nullptr, nullptr);
 
                 CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 570, 180, 20,
                               hwnd, (HMENU) 1001, nullptr, nullptr);
