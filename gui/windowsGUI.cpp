@@ -77,7 +77,7 @@ static DWORD CALLBACK ReadRtf(DWORD_PTR cookie, LPBYTE buffer, LONG requested, L
     return 0;
 }
 
-void windowsGUI::SetMarkdown(HWND edit, std::string_view markdown) {
+void windowsGUI::SetMarkdown(HWND edit, const std::string& markdown) {
     std::string rtf = markdown::MarkdownToRtf(markdown);
 
     RtfStream stream{ rtf.data(), rtf.size() };
@@ -178,6 +178,18 @@ void BrowseForModel(GUIHandles & gui, chatData & chatData) {
     }
 }
 
+WNDPROC OriginalInputProc = nullptr;
+
+LRESULT CALLBACK InputProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_KEYDOWN && wParam == VK_RETURN) {
+        SendChat(g_gui, chat::GetChatData());
+        SetStatus("", g_gui.inputText);
+        return 0;
+    }
+
+    return CallWindowProcW(OriginalInputProc, hwnd, uMsg, wParam, lParam);
+}
+
 LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
         case WM_CREATE:
@@ -205,6 +217,8 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
 
                 g_gui.status = CreateWindowW(L"STATIC", L"No model loaded", WS_VISIBLE | WS_CHILD, 20, 590, 500, 100,
                                              hwnd, nullptr, nullptr, nullptr);
+
+                OriginalInputProc = (WNDPROC) SetWindowLongPtrW(g_gui.inputText, GWLP_WNDPROC, (LONG_PTR) InputProc);
 
                 return 0;
             }

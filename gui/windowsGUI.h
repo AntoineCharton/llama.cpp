@@ -17,6 +17,6 @@ struct GUIHandles {
 class windowsGUI {
   public:
     static std::string      GetInputText(chatData chatdata, HWND window, HWND inputText);
-    static void             SetMarkdown(HWND edit, std::string_view markdown);
+    static void             SetMarkdown(HWND edit, const std::string & markdown);
     static LRESULT CALLBACK CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 };
