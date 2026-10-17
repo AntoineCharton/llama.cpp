@@ -181,7 +181,7 @@ void BrowseForModel(GUIHandles & gui, chatData & chatData) {
 WNDPROC OriginalInputProc = nullptr;
 
 LRESULT CALLBACK InputProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    if (uMsg == WM_KEYDOWN && wParam == VK_RETURN) {
+    if (uMsg == WM_KEYDOWN && wParam == VK_RETURN && !(GetKeyState(VK_SHIFT) & 0x8000)) {
         SendChat(g_gui, chat::GetChatData());
         SetStatus("", g_gui.inputText);
         return 0;
