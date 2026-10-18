@@ -6,12 +6,13 @@
 #include <string>
 
 struct GUIHandles {
-    HWND window       = nullptr;
-    HWND status       = nullptr;
-    HWND inputText    = nullptr;
-    HWND submitButton = nullptr;
-    HWND textInModel  = nullptr;
-    HWND richEdit     = nullptr;
+    HWND window          = nullptr;
+    HWND status          = nullptr;
+    HWND inputText       = nullptr;
+    HWND submitButton    = nullptr;
+    HWND loadModelButton = nullptr;
+    HWND textInModel     = nullptr;
+    HWND richEdit        = nullptr;
 };
 
 class windowsGUI {

@@ -77,7 +77,7 @@ static DWORD CALLBACK ReadRtf(DWORD_PTR cookie, LPBYTE buffer, LONG requested, L
     return 0;
 }
 
-void windowsGUI::SetMarkdown(HWND edit, const std::string& markdown) {
+void windowsGUI::SetMarkdown(HWND edit, const std::string & markdown) {
     std::string rtf = markdown::MarkdownToRtf(markdown);
 
     RtfStream stream{ rtf.data(), rtf.size() };
@@ -208,12 +208,12 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
                                   WS_VISIBLE | WS_CHILD | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 20,
                                   400, 800, 150, hwnd, nullptr, nullptr, nullptr);
 
-                g_gui.submitButton =
-                    CreateWindowW(L"BUTTON", L"Submit", WS_CHILD | BS_PUSHBUTTON, 20, 550, 180, 20,
+                g_gui.submitButton = CreateWindowW(L"BUTTON", L"Submit", WS_CHILD | BS_PUSHBUTTON, 20, 550, 180, 20,
                                                    hwnd, (HMENU) 1002, nullptr, nullptr);
 
-                CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 570, 180, 20,
-                              hwnd, (HMENU) 1001, nullptr, nullptr);
+                g_gui.loadModelButton =
+                    CreateWindowW(L"BUTTON", L"Load GGUF Model", WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON, 20, 570, 180,
+                                  20, hwnd, (HMENU) 1001, nullptr, nullptr);
 
                 g_gui.status = CreateWindowW(L"STATIC", L"No model loaded", WS_VISIBLE | WS_CHILD, 20, 590, 500, 100,
                                              hwnd, nullptr, nullptr, nullptr);
@@ -257,6 +257,18 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
 
                 return 0;
             }
+        case WM_ERASEBKGND:
+            {
+                HDC  hdc = (HDC) wParam;
+                RECT rect;
+                GetClientRect(hwnd, &rect);
+
+                HBRUSH brush = CreateSolidBrush(RGB(255, 255, 255));
+                FillRect(hdc, &rect, brush);
+                DeleteObject(brush);
+
+                return 1;  // Background erased
+            }
         case WM_PAINT:
             {
                 PAINTSTRUCT ps;
@@ -267,6 +279,39 @@ LRESULT CALLBACK windowsGUI::CALLBACKWindowProc(HWND hwnd, UINT uMsg, WPARAM wPa
                     SendChat(g_gui, chat::GetChatData());
                 }
                 return 0;
+            }
+        case WM_SIZE:
+            {
+                int   width             = LOWORD(lParam);
+                int   height            = HIWORD(lParam);
+                float firstSectionSize  = height * 0.6;
+                float secondSectionSize = height * 0.25;
+                float thirdSectionSize  = 20;
+                float fourthSectionSize = height - firstSectionSize - secondSectionSize - thirdSectionSize;
+                float marginSize        = 20;
+                float widthWithMargin   = width - 40;
+                if (g_gui.textInModel) {
+                    MoveWindow(g_gui.textInModel, 20, 0, widthWithMargin, firstSectionSize, TRUE);
+                }
+
+                if (g_gui.inputText) {
+                    MoveWindow(g_gui.inputText, 20, firstSectionSize, widthWithMargin, secondSectionSize, TRUE);
+                }
+
+                if (g_gui.submitButton) {
+                    MoveWindow(g_gui.submitButton, (widthWithMargin * 0.5) + marginSize,
+                               firstSectionSize + secondSectionSize, widthWithMargin * 0.5, thirdSectionSize, TRUE);
+                }
+
+                if (g_gui.loadModelButton) {
+                    MoveWindow(g_gui.loadModelButton, 20, firstSectionSize + secondSectionSize, widthWithMargin * 0.5,
+                               thirdSectionSize, TRUE);
+                }
+
+                if (g_gui.status) {
+                    MoveWindow(g_gui.status, 20, firstSectionSize + secondSectionSize + thirdSectionSize, widthWithMargin,
+                               fourthSectionSize, TRUE);
+                }
             }
     }
 
